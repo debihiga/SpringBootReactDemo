@@ -2,3 +2,6 @@
 .idea
 target/
 *.iml
+/src/main/resources/static/built/
+/package-lock.json
+/node_modules/
