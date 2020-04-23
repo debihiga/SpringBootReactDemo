@@ -47,28 +47,6 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Selenium -->
-        <dependency>
-            <groupId>org.seleniumhq.selenium</groupId>
-            <artifactId>selenium-server</artifactId>
-            <version>3.141.59</version>
-        </dependency>
-        <!--
-        If you use the selenium-server-standalone jar in your project,
-        you do not have to add selenium-java or a browser specific jar.
-
-        <dependency>
-            <groupId>org.seleniumhq.selenium</groupId>
-            <artifactId>selenium-java</artifactId>
-            <version>3.X</version>
-        </dependency>
-        <dependency>
-            <groupId>org.seleniumhq.selenium</groupId>
-            <artifactId>selenium-chrome-driver</artifactId>
-            <version>3.X</version>
-        </dependency>
-        -->
-
     </dependencies>
 
     <build>
