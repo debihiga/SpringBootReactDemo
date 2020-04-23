@@ -1,4 +1,4 @@
-package com.debihiga.seleniumdemo;
+package com.debihiga.springbootreactdemo;
 
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;

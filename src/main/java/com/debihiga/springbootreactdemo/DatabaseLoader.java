@@ -1,4 +1,4 @@
-package com.debihiga.seleniumdemo;
+package com.debihiga.springbootreactdemo;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
