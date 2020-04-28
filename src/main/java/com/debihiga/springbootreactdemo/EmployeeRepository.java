@@ -6,7 +6,11 @@ import org.springframework.data.repository.PagingAndSortingRepository;
  * From: https://spring.io/guides/tutorials/react-and-spring-data-rest/
  */
 /**
- * PagingAndSortingRepository,
+ * CrudRepository
+ * Interface for generic CRUD operations on a repository for a specific type.
+ * The Spring Data Repository will auto-generate the implementation based on the name we provided it.
+ *
+ * PagingAndSortingRepository (extends CrudRepository)
  * Adds extra options to set page size and adds navigational links to hop from page to page.
  * In the HAL response (http://stateless.co/hal_specification.html)
  * returns additional info in the links about the page.
