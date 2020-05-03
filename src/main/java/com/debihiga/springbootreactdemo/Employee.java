@@ -13,7 +13,6 @@ import java.util.Objects;
  *
  * Entity -> class for storage in a relational table.
  * */
-
 @Entity
 public class Employee {
 

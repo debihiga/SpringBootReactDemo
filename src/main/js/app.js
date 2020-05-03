@@ -11,6 +11,7 @@ const client = require('./client');
 const follow = require('./follow'); // function to hop multiple links by "rel"
 const root = '/api';
 const when = require('when');
+const stompClient = require('./websocket-listener');
 // end::vars[]
 
 /*
@@ -39,17 +40,25 @@ class App extends React.Component {
 	// Initialize all attributes.
 	constructor(props) {
 		super(props);
-		this.state = { employees: [], attributes: [], pageSize: 2, links: {} };
+		this.state = {employees: [], attributes: [], page: 1, pageSize: 2, links: {}};
 		this.updatePageSize = this.updatePageSize.bind(this);
 		this.onCreate = this.onCreate.bind(this);
 		this.onUpdate = this.onUpdate.bind(this);
 		this.onDelete = this.onDelete.bind(this);
 		this.onNavigate = this.onNavigate.bind(this);
+		this.refreshCurrentPage = this.refreshCurrentPage.bind(this);
+		this.refreshAndGoToLastPage = this.refreshAndGoToLastPage.bind(this);
 	}
 
 	// tag::follow-1[]
 	componentDidMount() {
 		this.loadFromServer(this.state.pageSize);
+		// Register for websocket events
+		stompClient.register([
+			{ route: '/topic/newEmployee', callback: this.refreshAndGoToLastPage },
+			{ route: '/topic/updateEmployee', callback: this.refreshCurrentPage },
+			{ route: '/topic/deleteEmployee', callback: this.refreshCurrentPage }
+		]);
 	}
 	// end::follow-1[]
 
@@ -135,33 +144,20 @@ class App extends React.Component {
 	// end::follow-2[]
 
 	// tag::create[]
+	/**
+	 * After the new employee is created,
+	 * the backend will send a message through websocket
+	 * and the UI will be updated using refreshAndGoToLastPage
+	 */
 	onCreate(newEmployee) {
-		follow(client, root, ['employees']).then(employeeCollection => {
-			return client({
+		follow(client, root, ['employees']).done(response => {
+			client({
 				method: 'POST',
-				path: employeeCollection.entity._links.self.href,
+				path: response.entity._links.self.href,
 				entity: newEmployee,
 				headers: { 'Content-Type': 'application/json' }
 			})
-		}).then(response => {
-			return follow(client, root, [
-				{ rel: 'employees', params: { 'size': this.state.pageSize } }]);
 		})
-			/**
-			 * New records are typically added to the end of the dataset. 
-			 * Since you are looking at a certain page, 
-			 * it is logical to expect the new employee record to not be on the current page. 
-			 * To handle this, you need to fetch a new batch of data with the same page size applied. 
-			 * Since the user probably wants to see the newly created employee, 
-			 * you can then use the hypermedia controls and navigate to the last entry.
-			 */
-			.done(response => {
-				if (typeof response.entity._links.last !== "undefined") {
-					this.onNavigate(response.entity._links.last.href);
-				} else {
-					this.onNavigate(response.entity._links.self.href);
-				}
-			});
 	}
 	// end::create[]
 
@@ -182,7 +178,8 @@ class App extends React.Component {
 				'If-Match': employee.headers.Etag
 			}
 		}).done(response => {
-			this.loadFromServer(this.state.pageSize);
+			//this.loadFromServer(this.state.pageSize);
+			/* Let the websocket handler update the state in refreshCurrentPage */
 		}, response => {
 			if (response.status.code === 412) {
 				alert('DENIED: Unable to update ' +
@@ -194,8 +191,9 @@ class App extends React.Component {
 
 	// tag::delete[]
 	onDelete(employee) {
-		client({ method: 'DELETE', path: employee._links.self.href }).done(response => {
-			this.loadFromServer(this.state.pageSize);
+		client({ method: 'DELETE', path: employee.entity._links.self.href }).done(response => {
+			//this.loadFromServer(this.state.pageSize);
+			/* Let the websocket handler update the state in refreshCurrentPage */
 		});
 	}
 	// end::delete[]
@@ -236,6 +234,79 @@ class App extends React.Component {
 		}
 	}
 	// end::update-page-size[]
+
+	// tag::websocket-handlers[]
+	/**
+	 * When a new employee is created, 
+	 * the behavior is to refresh the data set and then 
+	 * use the paging links to navigate to the last page. 
+	 * Why refresh the data before navigating to the end? 
+	 * It is possible that adding a new record causes a new page to get created.
+	 *  While it is possible to calculate if this will happen, 
+	 * it subverts the point of hypermedia. 
+	 * Instead of cobbling together customized page counts, 
+	 * it is better to use existing links and only go down that road 
+	 * if there is a performance-driving reason to do so.
+	 */
+	refreshAndGoToLastPage(message) {
+		follow(client, root, [{
+			rel: 'employees',
+			params: { size: this.state.pageSize }
+		}]).done(response => {
+			/**
+			 * New records are typically added to the end of the dataset. 
+			 * Since you are looking at a certain page, 
+			 * it is logical to expect the new employee record to not be on the current page. 
+			 * To handle this, you need to fetch a new batch of data with the same page size applied. 
+			 * Since the user probably wants to see the newly created employee, 
+			 * you can then use the hypermedia controls and navigate to the last entry.
+			 */
+			if (response.entity._links.last !== undefined) {
+				this.onNavigate(response.entity._links.last.href);
+			} else {
+				this.onNavigate(response.entity._links.self.href);
+			}
+		})
+	}
+
+	/**
+	 * When an employee is updated or deleted, 
+	 * the behavior is to refresh the current page. 
+	 * When you update a record, 
+	 * it impacts the page your are viewing. 
+	 * When you delete a record on the current page, 
+	 * a record from the next page will get pulled into the current one — 
+	 * hence the need to also refresh the current page.
+	 */
+	refreshCurrentPage(message) {
+		follow(client, root, [{
+			rel: 'employees',
+			params: {
+				size: this.state.pageSize,
+				page: this.state.page.number
+			}
+		}]).then(employeeCollection => {
+			this.links = employeeCollection.entity._links;
+			this.page = employeeCollection.entity.page;
+			return employeeCollection.entity._embedded.employees.map(employee => {
+				return client({
+					method: 'GET',
+					path: employee._links.self.href
+				})
+			});
+		}).then(employeePromises => {
+			return when.all(employeePromises);
+		}).then(employees => {
+			this.setState({
+				page: this.page,
+				employees: employees,
+				attributes: Object.keys(this.schema.properties),
+				pageSize: this.state.pageSize,
+				links: this.links
+			});
+		});
+	}
+	// end::websocket-handlers[]
 
 	render() {
 		return (
